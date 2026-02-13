@@ -1,7 +1,7 @@
 // file_dialog_web.rs
 
-use pdfium_render::prelude::PdfiumError;
 use pdfium_render::prelude::Pdfium;
+use pdfium_render::prelude::PdfiumError;
 
 use crate::app::{PdfLoadError, create_images_from_pdf};
 use crate::{PdfCoordPickerApp, pdf_load};

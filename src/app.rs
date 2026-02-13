@@ -10,11 +10,8 @@ use pdfium_render::prelude::PdfDocument;
 use pdfium_render::prelude::{PdfRenderConfig, PdfiumError};
 use slotmap::{DenseSlotMap, new_key_type};
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::file_dialog;
-
-#[cfg(target_arch = "wasm32")]
-use crate::file_dialog;
+use crate::file_dialog::file_dialog_native;
+use crate::{file_dialog, pdf_load};
 
 pub enum PdfLoadError {
     FileError,
@@ -27,6 +24,7 @@ pub type PdfFileLoadType = Result<(PathBuf, Vec<DynamicImage>), PdfLoadError>;
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct PdfCoordPickerApp {
+    manual_set_file_path: String,
     page_max_width: String,
     page_max_height: String,
     pub pdf_file_path: Option<PathBuf>,
@@ -46,6 +44,7 @@ impl Default for PdfCoordPickerApp {
     fn default() -> Self {
         let (mp, sc) = mpsc::channel();
         Self {
+            manual_set_file_path: String::new(),
             page_max_width: String::new(),
             page_max_height: String::new(),
             pdf_file_path: None,
@@ -226,6 +225,21 @@ impl eframe::App for PdfCoordPickerApp {
             ui.heading("PDF Coordinates Picker");
 
             ui.separator();
+
+            // set file path directly
+            ui.horizontal(|ui| {
+                ui.text_edit_singleline(&mut self.manual_set_file_path);
+                if ui.button("load file").clicked() {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        let result = file_dialog_native::load_pdf_file_from_filesystem(
+                            self.manual_set_file_path.clone().into(),
+                        );
+                        file_dialog_native::handle_file_load_result(self, ctx, ui, result);
+                    }
+                    //TODO: add web implementation
+                }
+            });
 
             ui.horizontal(|ui| {
                 // custom max width
