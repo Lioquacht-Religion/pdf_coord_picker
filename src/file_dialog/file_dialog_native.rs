@@ -1,9 +1,11 @@
 // file_dialog_native.rs
 
+use egui::Popup;
 use pdfium_render::prelude::Pdfium;
 
 use crate::app::{PdfLoadError, create_images_from_pdf};
 use crate::{PdfCoordPickerApp, pdf_load};
+use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::mpsc::TryRecvError;
 
@@ -78,17 +80,17 @@ pub fn handle_file_load_result(
         }
         //TODO: ui elements need some file load state to be actually displayed for
         //longer
-        Err(PdfLoadError::FileError) => {
+        Err(e) => {
             app.waiting_for_file = false;
-            ui.label("Could not open file");
-        }
-        Err(PdfLoadError::PdfError((path, e))) => {
-            app.waiting_for_file = false;
-            ui.label(format!(
-                "Could not load file='{}'. Pdf load error: {}",
-                path.to_string_lossy(),
-                e
-            ));
+            let err_text = match e {
+                PdfLoadError::FileError => Cow::Borrowed("Could not open file"),
+                PdfLoadError::PdfError((path, e)) => Cow::Owned(format!(
+                    "Could not load file='{}'. Pdf load error: {}",
+                    path.to_string_lossy(),
+                    e
+                )),
+            };
+            ui.label(err_text);
         }
     }
 }

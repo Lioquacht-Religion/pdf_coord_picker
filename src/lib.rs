@@ -4,3 +4,4 @@ mod app;
 pub use app::PdfCoordPickerApp;
 mod file_dialog;
 mod pdf_load;
+mod pdf_text_input;

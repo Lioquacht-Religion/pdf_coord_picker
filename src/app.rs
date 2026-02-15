@@ -1,17 +1,14 @@
 use std::path::PathBuf;
 use std::sync::mpsc;
 
-use egui::{
-    Color32, Painter, PointerButton, Pos2, Rect, Response, Sense, Stroke, TextEdit, TextureHandle,
-    epaint,
-};
+use egui::{Painter, PointerButton, Pos2, Rect, Response, Sense, TextureHandle};
 use image::DynamicImage;
 use pdfium_render::prelude::PdfDocument;
 use pdfium_render::prelude::{PdfRenderConfig, PdfiumError};
 use slotmap::{DenseSlotMap, new_key_type};
 
-use crate::file_dialog::file_dialog_native;
-use crate::{file_dialog, pdf_load};
+use crate::file_dialog;
+use crate::pdf_text_input::{PdfInputField, PdfInputFieldState};
 
 pub enum PdfLoadError {
     FileError,
@@ -84,7 +81,7 @@ impl PdfCoordPickerApp {
         }
     }
 
-    fn get_input_field_mut(&mut self, key: PdfPageInputId) -> Option<&mut PdfInputField> {
+    fn get_input_field_mut(&mut self, key: PdfPageInputId) -> Option<&mut PdfInputFieldState> {
         if let Some(pages) = &mut self.pdf_page_textures {
             if let Some(page) = pages.get_mut(key.page_id) {
                 page.input_fields.get_mut(key.input_field_key)
@@ -101,7 +98,7 @@ pub struct PdfPageImage {
     texture_handle: TextureHandle,
     width: f32,
     height: f32,
-    input_fields: DenseSlotMap<PdfInputFieldKey, PdfInputField>,
+    input_fields: DenseSlotMap<PdfInputFieldKey, PdfInputFieldState>,
 }
 
 impl PdfPageImage {
@@ -121,11 +118,6 @@ new_key_type! { struct PdfInputFieldKey; }
 struct PdfPageInputId {
     page_id: usize,
     input_field_key: PdfInputFieldKey,
-}
-
-struct PdfInputField {
-    rect: Rect,
-    text: String,
 }
 
 pub fn create_images_from_pdf<'a>(
@@ -232,6 +224,8 @@ impl eframe::App for PdfCoordPickerApp {
                 if ui.button("load file").clicked() {
                     #[cfg(not(target_arch = "wasm32"))]
                     {
+                        use crate::file_dialog::file_dialog_native;
+
                         let result = file_dialog_native::load_pdf_file_from_filesystem(
                             self.manual_set_file_path.clone().into(),
                         );
@@ -342,10 +336,12 @@ fn handle_pdf_input_create(
         if pdf_page_response.clicked_by(PointerButton::Primary) {
             let delta_pos = (delta_x, delta_y).into();
             println!("clicked mouse in rectangle");
-            pdf_page.input_fields.insert(PdfInputField {
-                rect: Rect::from_center_size(delta_pos, [30., 30.].into()),
-                text: String::new(),
-            });
+            pdf_page
+                .input_fields
+                .insert(PdfInputFieldState::new(Rect::from_center_size(
+                    delta_pos,
+                    [30., 30.].into(),
+                )));
         }
     }
 
@@ -370,51 +366,24 @@ fn draw_pdf_input_fields(
     response: &Response,
     painter: &mut Painter,
     page_id: usize,
-    pdf_input_fields: &mut DenseSlotMap<PdfInputFieldKey, PdfInputField>,
+    pdf_input_fields: &mut DenseSlotMap<PdfInputFieldKey, PdfInputFieldState>,
     selected_input_field_key: &mut Option<PdfPageInputId>,
     ui: &mut egui::Ui,
 ) {
-    for (key, input_field) in pdf_input_fields {
-        let input_field_response = ui_draw_input_field(response, painter, input_field, ui);
-        check_input_field_click(
-            &input_field_response,
-            selected_input_field_key,
-            PdfPageInputId {
+    let mut key_to_remove = None;
+    for (key, input_field) in pdf_input_fields.iter_mut() {
+        let input_field_response = PdfInputField::new().show(input_field, response, painter, ui);
+        if response.clicked_by(PointerButton::Primary) {
+            *selected_input_field_key = Some(PdfPageInputId {
                 page_id,
                 input_field_key: key,
-            },
-        );
+            });
+        } else if input_field_response.clicked_by(PointerButton::Secondary) {
+            key_to_remove = Some(key);
+        }
     }
-}
-
-fn ui_draw_input_field(
-    response: &Response,
-    painter: &mut Painter,
-    pdf_input_field: &mut PdfInputField,
-    ui: &mut egui::Ui,
-) -> Response {
-    let translate_field_rect = pdf_input_field
-        .rect
-        .translate((response.rect.left(), response.rect.top()).into());
-    painter.add(epaint::RectShape::stroke(
-        translate_field_rect,
-        0.0,
-        Stroke::new(3., Color32::from_rgb(255, 20, 20)),
-        egui::StrokeKind::Outside,
-    ));
-    ui.place(
-        translate_field_rect,
-        TextEdit::singleline(&mut pdf_input_field.text),
-    )
-}
-
-fn check_input_field_click(
-    response: &Response,
-    selected_input_field_key: &mut Option<PdfPageInputId>,
-    input_field_key: PdfPageInputId,
-) {
-    if response.clicked() {
-        *selected_input_field_key = Some(input_field_key);
+    if let Some(key) = key_to_remove {
+        pdf_input_fields.remove(key);
     }
 }
 
