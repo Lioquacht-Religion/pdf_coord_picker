@@ -1,9 +1,9 @@
 use egui::{
-    epaint, Color32, CursorGrab, Painter, PointerButton, Rect, Response, Sense, Stroke, TextEdit, Vec2
+    epaint, Color32, Painter, PointerButton, Pos2, Rect, Response, Stroke, TextEdit
 };
 use serde::{Deserialize, Serialize};
 
-pub struct PdfTableInput {}
+//pub struct PdfTableInput {}
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PdfInputFieldSerde {
@@ -17,6 +17,9 @@ pub struct PdfInputFieldSerde {
 enum CursorAction{
     None,
     ResizeNorth,
+    ResizeWest,
+    ResizeSouth,
+    ResizeEast,
 }
 
 pub struct PdfInputFieldState {
@@ -119,43 +122,82 @@ impl PdfInputField {
     ) {
         match state.cursor_action{
             CursorAction::None => Self::ui_handle_none_cursor_state(state, input_resp),
-            CursorAction::ResizeNorth => Self::ui_handle_resize_north_cursor_state(state, page_resp, input_resp),
+            CursorAction::ResizeNorth => Self::ui_handle_resize_cursor_state(
+                &mut state.cursor_action, input_resp, page_resp.rect.top(), 
+                0., input_resp.rect.bottom(), state.rect.top_mut(),
+                |pos| {pos.y}
+            ),
+            CursorAction::ResizeWest => Self::ui_handle_resize_cursor_state(
+                &mut state.cursor_action, input_resp, 
+                    page_resp.rect.left(), 0., state.rect.right(), state.rect.left_mut(),  
+                |pos| {pos.x}
+            ),
+            CursorAction::ResizeSouth => Self::ui_handle_resize_cursor_state(
+                &mut state.cursor_action, input_resp, 
+                page_resp.rect.top(), state.rect.top(), page_resp.rect.bottom(), state.rect.bottom_mut(),  
+                |pos| {pos.y}
+            ),
+            CursorAction::ResizeEast => Self::ui_handle_resize_cursor_state(
+                &mut state.cursor_action, input_resp, 
+                page_resp.rect.left(), state.rect.left(), page_resp.rect.right(), state.rect.right_mut(),
+                |pos| {pos.x}
+            ),
+
         }
     }
 
-    fn ui_handle_resize_north_cursor_state(
-        state: &mut PdfInputFieldState,
-        page_resp: &Response,
-        input_resp: &Response
+   fn ui_handle_resize_cursor_state(
+        cursor_action: &mut CursorAction,
+        input_resp: &Response,
+        page_translate_side_pos: f32,
+        min_pos: f32,
+        max_pos: f32,
+        side_pos: &mut f32,
+        pointer_pos_getter: fn(&Pos2) -> f32,
     ) {
             if input_resp.dragged_by(PointerButton::Primary) && let Some(pos) = input_resp.interact_pointer_pos() {
-                println!("top before : {}", input_resp.rect.top());
-                let pos_y = (pos.y - page_resp.rect.top()).abs();
-                let pos_y = pos_y.clamp(0., state.rect.bottom());
-                *state.rect.top_mut() = pos_y;
-                println!("top after: {}", input_resp.rect.top());
-                println!("pos: {pos}");
+                let pos_y = (pointer_pos_getter(&pos) - page_translate_side_pos).abs();
+                let pos_y = pos_y.clamp(min_pos, max_pos);
+                *side_pos = pos_y;
             }
             else {
-                state.cursor_action = CursorAction::None;
+                *cursor_action = CursorAction::None;
             }
     }
 
     fn ui_handle_none_cursor_state(state: &mut PdfInputFieldState, input_resp: &Response) {
         if input_resp.has_focus() {
-            println!("dragging and focus");
             if let Some(pos) = input_resp.interact_pointer_pos() {
-                println!("pos: {pos}");
-                println!("top : {}", input_resp.rect.top());
-                if input_resp.rect.top() <= pos.y && input_resp.rect.top() + 10. >= pos.y {
+                if input_resp.rect.top() <= pos.y && input_resp.rect.top() + 3. >= pos.y {
                     input_resp
                         .clone()
                         .on_hover_cursor(egui::CursorIcon::ResizeNorth);
                     if input_resp.dragged_by(PointerButton::Primary) {
-                        let drag_delta = input_resp.drag_delta();
-                        println!("drag delta: {drag_delta}");
-                        //*state.rect.top_mut() += drag_delta.y * 1.4;
                         state.cursor_action = CursorAction::ResizeNorth;
+                    }
+                }
+                if input_resp.rect.bottom() >= pos.y && input_resp.rect.bottom() - 3. <= pos.y {
+                    input_resp
+                        .clone()
+                        .on_hover_cursor(egui::CursorIcon::ResizeSouth);
+                    if input_resp.dragged_by(PointerButton::Primary) {
+                        state.cursor_action = CursorAction::ResizeSouth;
+                    }
+                }
+                if input_resp.rect.left() <= pos.x && input_resp.rect.left() + 10. >= pos.x {
+                    input_resp
+                        .clone()
+                        .on_hover_cursor(egui::CursorIcon::ResizeWest);
+                    if input_resp.dragged_by(PointerButton::Primary) {
+                        state.cursor_action = CursorAction::ResizeWest;
+                    }
+                }
+                if input_resp.rect.right() >= pos.x && input_resp.rect.right() - 10. <= pos.x {
+                    input_resp
+                        .clone()
+                        .on_hover_cursor(egui::CursorIcon::ResizeEast);
+                    if input_resp.dragged_by(PointerButton::Primary) {
+                        state.cursor_action = CursorAction::ResizeEast;
                     }
                 }
             }
